@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Notifications Temps Réel</title>
+    <script src="https://js.pusher.com/8.2.0/pusher.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .notification {
+            background: #e3f2fd;
+            border-left: 4px solid #2196f3;
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 4px;
+        }
+        .notification.success {
+            background: #e8f5e8;
+            border-left-color: #4caf50;
+        }
+        .notification.warning {
+            background: #fff3e0;
+            border-left-color: #ff9800;
+        }
+        .notification.error {
+            background: #ffebee;
+            border-left-color: #f44336;
+        }
+        .form-group {
+            margin: 15px 0;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        input, select, textarea {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+        button {
+            background: #2196f3;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover {
+            background: #1976d2;
+        }
+        .status {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 4px;
+            font-weight: bold;
+        }
+        .status.connected {
+            background: #e8f5e8;
+            color: #2e7d32;
+        }
+        .status.disconnected {
+            background: #ffebee;
+            color: #c62828;
+        }
+        #notifications {
+            max-height: 400px;
+            overflow-y: auto;
+            border: 1px solid #ddd;
+            padding: 10px;
+            background: #fafafa;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔔 Test Notifications Temps Réel</h1>
+        
+        <div id="connectionStatus" class="status disconnected">
+            ❌ Non connecté
+        </div>
+
+        <div class="form-group">
+            <label for="storeId">ID de la Boutique:</label>
+            <select id="storeId">
+                <option value="1">Boutique Centre-Ville (ID: 1)</option>
+                <option value="2">Boutique Quartier Nord (ID: 2)</option>
+                <option value="3">Boutique Quartier Sud (ID: 3)</option>
+                <option value="4">Boutique Quartier Est (ID: 4)</option>
+                <option value="5">Boutique Quartier Ouest (ID: 5)</option>
+            </select>
+        </div>
+
+        <div class="form-group">
+            <label for="apiUrl">URL de l'API:</label>
+            <input type="text" id="apiUrl" value="http://localhost:8000/api" placeholder="http://localhost:8000/api">
+        </div>
+
+        <div class="form-group">
+            <label for="authToken">Token d'authentification:</label>
+            <input type="text" id="authToken" placeholder="Votre token JWT ici">
+        </div>
+
+        <button onclick="connect()">🔌 Se connecter</button>
+        <button onclick="disconnect()">❌ Se déconnecter</button>
+        <button onclick="clearNotifications()">🗑️ Effacer les notifications</button>
+
+        <h3>📱 Notifications Reçues:</h3>
+        <div id="notifications"></div>
+    </div>
+
+    <script>
+        let pusher = null;
+        let channel = null;
+        let isConnected = false;
+
+        function connect() {
+            const storeId = document.getElementById('storeId').value;
+            const apiUrl = document.getElementById('apiUrl').value;
+            const token = document.getElementById('authToken').value;
+
+            if (!token) {
+                alert('Veuillez entrer un token d\'authentification');
+                return;
+            }
+
+            // Configuration Pusher
+            pusher = new Pusher('your-pusher-key', {
+                cluster: 'mt1',
+                authEndpoint: apiUrl + '/broadcasting/auth',
+                auth: {
+                    headers: {
+                        'Authorization': 'Bearer ' + token,
+                        'Accept': 'application/json',
+                        'Content-Type': 'application/json'
+                    }
+                }
+            });
+
+            // Connexion au canal de la boutique
+            channel = pusher.subscribe('private-store.' + storeId);
+
+            // Écouter les événements
+            channel.bind('order_created', function(data) {
+                addNotification('Nouvelle commande créée', data, 'success');
+            });
+
+            channel.bind('order_updated', function(data) {
+                addNotification('Commande mise à jour', data, 'warning');
+            });
+
+            channel.bind('order_cancelled', function(data) {
+                addNotification('Commande annulée', data, 'error');
+            });
+
+            channel.bind('payment_created', function(data) {
+                addNotification('Nouveau paiement créé', data, 'success');
+            });
+
+            channel.bind('payment_completed', function(data) {
+                addNotification('Paiement terminé', data, 'success');
+            });
+
+            // Gestion de la connexion
+            pusher.connection.bind('connected', function() {
+                isConnected = true;
+                updateConnectionStatus('✅ Connecté au canal store.' + storeId, 'connected');
+            });
+
+            pusher.connection.bind('disconnected', function() {
+                isConnected = false;
+                updateConnectionStatus('❌ Déconnecté', 'disconnected');
+            });
+
+            pusher.connection.bind('error', function(err) {
+                console.error('Erreur Pusher:', err);
+                addNotification('Erreur de connexion', err, 'error');
+            });
+        }
+
+        function disconnect() {
+            if (pusher) {
+                pusher.disconnect();
+                pusher = null;
+                channel = null;
+                isConnected = false;
+                updateConnectionStatus('❌ Déconnecté', 'disconnected');
+            }
+        }
+
+        function updateConnectionStatus(message, className) {
+            const statusEl = document.getElementById('connectionStatus');
+            statusEl.textContent = message;
+            statusEl.className = 'status ' + className;
+        }
+
+        function addNotification(title, data, type = 'info') {
+            const notificationsEl = document.getElementById('notifications');
+            const notificationEl = document.createElement('div');
+            notificationEl.className = 'notification ' + type;
+            
+            const timestamp = new Date().toLocaleTimeString();
+            notificationEl.innerHTML = `
+                <strong>${title}</strong> - ${timestamp}
+                <br><small>Type: ${data.type || 'unknown'}</small>
+                <br><small>Message: ${data.message || 'Aucun message'}</small>
+                <details style="margin-top: 10px;">
+                    <summary>Détails complets</summary>
+                    <pre style="background: #f5f5f5; padding: 10px; margin: 5px 0; border-radius: 4px; overflow-x: auto;">${JSON.stringify(data, null, 2)}</pre>
+                </details>
+            `;
+            
+            notificationsEl.insertBefore(notificationEl, notificationsEl.firstChild);
+        }
+
+        function clearNotifications() {
+            document.getElementById('notifications').innerHTML = '';
+        }
+
+        // Instructions d'utilisation
+        document.addEventListener('DOMContentLoaded', function() {
+            const instructions = `
+                <div style="background: #e3f2fd; padding: 15px; border-radius: 4px; margin-bottom: 20px;">
+                    <h4>📋 Instructions d'utilisation:</h4>
+                    <ol>
+                        <li><strong>Obtenez un token d'authentification:</strong>
+                            <br>POST ${document.getElementById('apiUrl').value}/auth/login
+                            <br>Body: {"email": "seller@boutiquecentreville.com", "password": "password"}
+                        </li>
+                        <li><strong>Collez le token</strong> dans le champ "Token d'authentification"</li>
+                        <li><strong>Sélectionnez la boutique</strong> à écouter</li>
+                        <li><strong>Cliquez sur "Se connecter"</strong></li>
+                        <li><strong>Créez une commande</strong> via l'API pour voir les notifications</li>
+                    </ol>
+                </div>
+            `;
+            document.querySelector('.container').insertAdjacentHTML('afterbegin', instructions);
+        });
+    </script>
+</body>
+</html>
