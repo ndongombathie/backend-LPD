@@ -42,7 +42,7 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // Order routes
     Route::apiResource('orders', OrderController::class);
-    Route::post('/orders/{order}/cancel', [OrderController::class, 'cancel']);
+    Route::post('/orders/{orderc}/cancel', [OrderController::class, 'cancel']);
     Route::get('/orders/pending', [OrderController::class, 'pendingOrders']);
 
     // Payment routes
